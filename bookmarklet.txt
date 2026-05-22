@@ -1,0 +1,40 @@
+BOOKMARKLET — Canvas Bulk Feedback v4
+=====================================
+
+Instructions
+------------
+1. Copy the entire javascript: line below (one line, starting with "javascript:").
+2. In your browser, open the Bookmarks/Favourites bar.
+3. Create a new bookmark. Name it "Canvas Bulk Feedback".
+4. Paste the copied line as the URL of the bookmark.
+5. Done. Click the bookmark on any Canvas page to launch the tool.
+
+How the bookmarklet works
+-------------------------
+The bookmarklet URL is just a tiny loader. It fetches the full v4 script
+from jsDelivr CDN (which mirrors this GitHub repo), then executes it.
+jsDelivr caches each @main release, so changes pushed to GitHub
+may take a few minutes to appear — pin to a tag (e.g. @v4.0) for stability.
+
+The bookmarklet URL
+-------------------
+IMPORTANT: replace "quincy40/canvas-bulkgrader" below with your actual
+GitHub username/repo if you forked or renamed it.
+
+javascript:(function(){if(window.__CanvasFeedbackV4Loaded){return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/quincy40/canvas-bulkgrader@main/canvas_bulk_feedback_v4.js';s.onerror=function(){alert('Failed to load Canvas Bulk Feedback. Check your internet connection or paste the script directly into the console.');};document.head.appendChild(s);})();
+
+Alternative: load from GitHub raw (bypasses CDN cache but may have CORS issues)
+-------------------------------------------------------------------------------
+If jsDelivr fails, you can also paste the script directly from the raw GitHub URL
+into the browser console. The CDN approach is more reliable for bookmarklets.
+
+Testing the bookmarklet
+-----------------------
+To verify the bookmarklet loads:
+1. Go to canvas.auckland.ac.nz and log in.
+2. Click the bookmark.
+3. A floating orange panel titled "Canvas Bulk Feedback v4" should appear
+   in the top-right corner of the Canvas page.
+4. Select your course and assignment from the dropdowns.
+5. Click "Choose file" to load your CSV or XLSX.
+6. Click ▶ Start.
