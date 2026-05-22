@@ -21,7 +21,7 @@ The bookmarklet URL
 IMPORTANT: replace "quincy40/canvas-bulkgrader" below with your actual
 GitHub username/repo if you forked or renamed it.
 
-javascript:(function(){if(window.__CanvasFeedbackV4Loaded){return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/quincy40/canvas-bulkgrader@main/canvas_bulk_feedback_v4.js';s.onerror=function(){alert('Failed to load Canvas Bulk Feedback. Check your internet connection or paste the script directly into the console.');};document.head.appendChild(s);})();
+javascript:(function(){if(window.__CanvasFeedbackV4Loaded){return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/quincy40/canvas-bulkgrader@v4.0/canvas_bulk_feedback_v4.js';s.onerror=function(){alert('Failed to load Canvas Bulk Feedback. Check your internet connection or paste the script directly into the console.');};document.head.appendChild(s);})();
 
 Alternative: load from GitHub raw (bypasses CDN cache but may have CORS issues)
 -------------------------------------------------------------------------------
