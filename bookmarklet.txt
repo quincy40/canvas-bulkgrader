@@ -1,40 +1,58 @@
 BOOKMARKLET — Canvas Bulk Feedback v4
 =====================================
 
-Instructions
-------------
-1. Copy the entire javascript: line below (one line, starting with "javascript:").
-2. In your browser, open the Bookmarks/Favourites bar.
-3. Create a new bookmark. Name it "Canvas Bulk Feedback".
-4. Paste the copied line as the URL of the bookmark.
-5. Done. Click the bookmark on any Canvas page to launch the tool.
+WHY THE OLD BOOKMARKLET FAILED
+-------------------------------
+Canvas has a Content Security Policy (CSP) that blocks external <script> tags
+from third-party domains like jsDelivr. The previous bookmarklet injected a
+<script src="..."> element, which Canvas silently blocks, triggering the
+onerror handler and the alert you saw.
 
-How the bookmarklet works
--------------------------
-The bookmarklet URL is just a tiny loader. It fetches the full v4 script
-from jsDelivr CDN (which mirrors this GitHub repo), then executes it.
-jsDelivr caches each @main release, so changes pushed to GitHub
-may take a few minutes to appear — pin to a tag (e.g. @v4.0) for stability.
+The fix: use fetch() + eval() instead. Canvas allows eval() — SpeedGrader
+itself depends on it — so fetching the script as text and evaluating it
+works where script-tag injection does not.
 
-The bookmarklet URL
--------------------
-IMPORTANT: replace "quincy40/canvas-bulkgrader" below with your actual
-GitHub username/repo if you forked or renamed it.
+OPTION 1 — Bookmarklet (fetch + eval approach)
+----------------------------------------------
+Copy the entire javascript: line below (it is one long line).
+Create a browser bookmark, paste it as the URL. Name it "Canvas Bulk Feedback".
+Click it on any Canvas page.
 
-javascript:(function(){if(window.__CanvasFeedbackV4Loaded){return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/quincy40/canvas-bulkgrader@v4.0/canvas_bulk_feedback_v4.js';s.onerror=function(){alert('Failed to load Canvas Bulk Feedback. Check your internet connection or paste the script directly into the console.');};document.head.appendChild(s);})();
+javascript:(function(){if(window.__CanvasFeedbackV4Loaded){return;}fetch('https://cdn.jsdelivr.net/gh/quincy40/canvas-bulkgrader@v4.0/canvas_bulk_feedback_v4.js',{cache:'no-cache'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(c){(0,eval)(c);}).catch(function(e){console.error('[CanvasFeedback] Load failed:',e);alert('Canvas Bulk Feedback failed to load via bookmarklet.\n\nUse Option 2 instead: open DevTools (F12) > Console and paste the script from:\nhttps://raw.githubusercontent.com/quincy40/canvas-bulkgrader/master/canvas_bulk_feedback_v4.js');});})();
 
-Alternative: load from GitHub raw (bypasses CDN cache but may have CORS issues)
--------------------------------------------------------------------------------
-If jsDelivr fails, you can also paste the script directly from the raw GitHub URL
-into the browser console. The CDN approach is more reliable for bookmarklets.
+If this still fails (some university networks also restrict fetch() to external
+domains), use Option 2 below — it always works.
 
-Testing the bookmarklet
------------------------
-To verify the bookmarklet loads:
-1. Go to canvas.auckland.ac.nz and log in.
-2. Click the bookmark.
-3. A floating orange panel titled "Canvas Bulk Feedback v4" should appear
-   in the top-right corner of the Canvas page.
-4. Select your course and assignment from the dropdowns.
-5. Click "Choose file" to load your CSV or XLSX.
-6. Click ▶ Start.
+
+OPTION 2 — Paste directly into the browser console (always works)
+-----------------------------------------------------------------
+The DevTools console bypasses Canvas's CSP entirely. This is the most
+reliable method and takes about 10 seconds.
+
+1. Log into Canvas (canvas.auckland.ac.nz).
+2. Open DevTools: press F12  (or Ctrl+Shift+I on Windows, Cmd+Option+I on Mac).
+3. Click the Console tab.
+4. Open this URL in a new tab and copy ALL the text on the page:
+   https://raw.githubusercontent.com/quincy40/canvas-bulkgrader/master/canvas_bulk_feedback_v4.js
+5. Paste into the console and press Enter.
+6. The orange panel appears. You can close DevTools — the panel stays.
+
+TIP: Make a second bookmark called "Canvas Script" that opens the raw GitHub
+URL above. That way you only need two clicks: open the raw URL, Ctrl+A,
+Ctrl+C, then switch back to Canvas, open the console, paste, Enter.
+
+
+OPTION 3 — Snippet (Chrome / Edge, one-click after setup)
+----------------------------------------------------------
+Chrome and Edge let you save a script as a "Snippet" that runs with one click,
+without needing to paste every time. This is the best long-term option.
+
+1. Open DevTools (F12) on any Canvas page.
+2. Click Sources > Snippets (may be under >> if hidden).
+3. Click "+ New snippet". Name it "Canvas Bulk Feedback".
+4. Paste the full contents of canvas_bulk_feedback_v4.js into the editor.
+5. Press Ctrl+S to save.
+6. To run: open DevTools > Sources > Snippets > right-click > Run,
+   or press Ctrl+Enter with the snippet open.
+
+Snippets are saved in the browser profile — you only set this up once.
