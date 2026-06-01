@@ -132,7 +132,17 @@
   // API calls
   // ============================================================
   async function fetchCourses() {
-    return fetchAllPages('/api/v1/courses?per_page=50&enrollment_type=teacher&state[]=available');
+    return fetchAllPages('/api/v1/courses?per_page=50&enrollment_type=teacher&state[]=available&include[]=term');
+  }
+
+  function courseLabel(c) {
+    // Prefer the enrolment term name; fall back to the year from start_at; fall back to course_code
+    const term = c.term?.name;
+    if (term) return `${c.name}  [${term}]`;
+    const year = c.start_at ? new Date(c.start_at).getFullYear() : null;
+    if (year) return `${c.name}  [${year}]`;
+    if (c.course_code && c.course_code !== c.name) return `${c.name}  [${c.course_code}]`;
+    return c.name;
   }
 
   async function fetchAssignments(courseId) {
@@ -541,9 +551,14 @@
 
     // Load courses
     fetchCourses().then(courses => {
-      courses.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+      // Sort by name, then by term start descending so newest appears first within same name
+      courses.sort((a, b) => {
+        const nameSort = (a.name ?? '').localeCompare(b.name ?? '');
+        if (nameSort !== 0) return nameSort;
+        return (b.start_at ?? '').localeCompare(a.start_at ?? '');
+      });
       courseSel.innerHTML = '<option value="">Select course…</option>' +
-        courses.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+        courses.map(c => `<option value="${c.id}">${escHtml(courseLabel(c))}</option>`).join('');
       log(`Loaded ${courses.length} teacher courses.`);
     }).catch(e => {
       log('Failed to load courses: ' + e.message, 'error');
