@@ -382,6 +382,9 @@
       .cf-btn-danger:not(:disabled):hover  { background: #a32117; }
       .cf-btn-secondary { background: #e8ecef; color: #2d3b45; }
       .cf-btn-secondary:not(:disabled):hover { background: #d5dbdf; }
+      .cf-btn-check     { background: #f0f4ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+      .cf-btn-check:not(:disabled):hover { background: #dbeafe; }
+      .cf-dim { font-weight: 400; color: #9ca3af; }
       #cf-btn-row { display: flex; gap: 7px; flex-wrap: wrap; }
       .cf-checks { display: flex; flex-direction: column; gap: 5px; }
       .cf-check-row { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -442,7 +445,7 @@
           </div>
         </div>
         <div class="cf-checks">
-          <label class="cf-check-row"><input type="checkbox" id="cf-opt-dryrun"> Dry run (log only, no changes)</label>
+          <label class="cf-check-row"><input type="checkbox" id="cf-opt-dryrun"> <span>Dry run <span class="cf-dim">(log only — no changes made)</span></span></label>
           <label class="cf-check-row"><input type="checkbox" id="cf-opt-dupes" checked> Skip if I already posted a comment</label>
           <label class="cf-check-row"><input type="checkbox" id="cf-opt-resume" checked> Resume — skip already-completed students</label>
         </div>
@@ -451,6 +454,7 @@
         <div id="cf-progress-text" style="font-size:12px;color:#6b7280">Ready</div>
         <div id="cf-log"></div>
         <div id="cf-btn-row">
+          <button id="cf-check-btn" class="cf-btn cf-btn-check" disabled title="Validate file against Canvas roster — no changes made">🔍 Check file</button>
           <button id="cf-start-btn" class="cf-btn cf-btn-primary" disabled>▶ Start</button>
           <button id="cf-stop-btn"  class="cf-btn cf-btn-danger"  disabled>⏹ Stop</button>
           <button id="cf-clear-btn" class="cf-btn cf-btn-secondary" title="Clear resume state for this assignment">Clear resume</button>
@@ -513,11 +517,12 @@
     };
 
     // Options
-    document.getElementById('cf-opt-dryrun').onchange  = e => { CONFIG.dry_run         = e.target.checked; };
+    document.getElementById('cf-opt-dryrun').onchange  = e => { CONFIG.dry_run         = e.target.checked; updateStartLabel(); };
     document.getElementById('cf-opt-dupes').onchange   = e => { CONFIG.skip_duplicates = e.target.checked; };
     document.getElementById('cf-opt-resume').onchange  = e => { CONFIG.resume          = e.target.checked; };
 
     // Buttons
+    document.getElementById('cf-check-btn').onclick  = checkFile;
     document.getElementById('cf-start-btn').onclick  = startRun;
     document.getElementById('cf-stop-btn').onclick   = () => { stopRequested = true; log('Stop requested…', 'warn'); };
     document.getElementById('cf-clear-btn').onclick  = () => {
@@ -550,10 +555,20 @@
   }
 
   function checkStartButton() {
+    const ready = !!(CONFIG.course_id && CONFIG.assignment_id &&
+                     document.getElementById('cf-file-input')?.files?.length);
+    const startBtn = document.getElementById('cf-start-btn');
+    const checkBtn = document.getElementById('cf-check-btn');
+    if (startBtn) startBtn.disabled = !ready;
+    if (checkBtn) checkBtn.disabled = !ready;
+    updateStartLabel();
+  }
+
+  function updateStartLabel() {
     const btn = document.getElementById('cf-start-btn');
     if (!btn) return;
-    btn.disabled = !(CONFIG.course_id && CONFIG.assignment_id &&
-                     document.getElementById('cf-file-input')?.files?.length);
+    btn.textContent = CONFIG.dry_run ? '▶ Start (dry run)' : '▶ Start';
+    btn.style.background = CONFIG.dry_run ? '#6b7280' : '';
   }
 
   function makeDraggable(el, handle) {
@@ -700,6 +715,137 @@
     if (startBtn) startBtn.disabled = false;
     if (stopBtn)  stopBtn.disabled  = true;
     return results;
+  }
+
+  // ============================================================
+  // Check file — read-only preflight validation, zero writes
+  // ============================================================
+  async function checkFile() {
+    const fileInput = document.getElementById('cf-file-input');
+    const file = fileInput?.files?.[0];
+    if (!file || !CONFIG.course_id || !CONFIG.assignment_id) {
+      log('Select course, assignment, and file first.', 'warn'); return;
+    }
+
+    const checkBtn = document.getElementById('cf-check-btn');
+    const startBtn = document.getElementById('cf-start-btn');
+    checkBtn.disabled = true;
+    startBtn.disabled = true;
+    logEl.innerHTML = '';
+    setProgress(0, 0);
+    setStatus('running');
+    log('🔍 Running preflight check (read-only — nothing will be changed)…');
+
+    // Parse file
+    let rows;
+    try {
+      if (/\.xlsx?$/i.test(file.name)) {
+        log('Loading SheetJS for xlsx parsing…');
+        rows = await parseXLSX(file);
+      } else {
+        rows = parseCSV(await file.text());
+      }
+      rows = normalizeRows(rows);
+      log(`Parsed ${rows.length} row${rows.length !== 1 ? 's' : ''} from ${file.name}.`);
+    } catch (e) {
+      log('File parse error: ' + e.message, 'error');
+      setStatus('error');
+      checkBtn.disabled = false;
+      startBtn.disabled = false;
+      return;
+    }
+
+    // Fetch roster
+    let submissionMap;
+    try {
+      submissionMap = await fetchSubmissionMap(CONFIG.course_id, CONFIG.assignment_id);
+    } catch (e) {
+      log('Failed to load Canvas roster: ' + e.message, 'error');
+      setStatus('error');
+      checkBtn.disabled = false;
+      startBtn.disabled = false;
+      return;
+    }
+
+    const completedIds = CONFIG.resume
+      ? getCompletedIds(CONFIG.course_id, CONFIG.assignment_id)
+      : new Set();
+
+    // Tally each row
+    const issues  = { notFound: [], blankRow: [], missingId: [] };
+    const counts  = { willPost: 0, gradeOnly: 0, commentOnly: 0, both: 0,
+                      alreadyDone: 0, blankSkip: 0, notFound: 0, missingId: 0 };
+
+    rows.forEach((row, i) => {
+      const sid     = String(row.student_id ?? '').trim();
+      const grade   = row.grade?.trim()   || null;
+      const comment = row.comment?.trim() || null;
+
+      if (!sid) {
+        issues.missingId.push(`Row ${i + 2}`);
+        counts.missingId++;
+        return;
+      }
+      if (completedIds.has(sid)) {
+        counts.alreadyDone++;
+        return;
+      }
+      if (!submissionMap[sid]) {
+        issues.notFound.push(sid);
+        counts.notFound++;
+        return;
+      }
+      if (!grade && !comment) {
+        issues.blankRow.push(`Row ${i + 2} (${sid})`);
+        counts.blankSkip++;
+        return;
+      }
+      counts.willPost++;
+      if (grade && comment) counts.both++;
+      else if (grade)        counts.gradeOnly++;
+      else                   counts.commentOnly++;
+    });
+
+    // Report
+    log('──────────────────────────────────────');
+    log(`File rows:         ${rows.length}`);
+    log(`Canvas roster:     ${Object.keys(submissionMap).length} students`);
+    log('──────────────────────────────────────');
+
+    if (counts.willPost > 0) {
+      log(`✓ Will post to:    ${counts.willPost} student${counts.willPost !== 1 ? 's' : ''}`, 'ok');
+      if (counts.both)        log(`    grade + comment: ${counts.both}`, 'ok');
+      if (counts.gradeOnly)   log(`    grade only:      ${counts.gradeOnly}`, 'ok');
+      if (counts.commentOnly) log(`    comment only:    ${counts.commentOnly}`, 'ok');
+    }
+    if (counts.alreadyDone > 0)
+      log(`⏭ Resume skip:     ${counts.alreadyDone} already completed`, 'warn');
+    if (counts.blankSkip > 0)
+      log(`⚠ Blank rows:      ${counts.blankSkip} (no grade or comment — will skip)`, 'warn');
+    if (counts.missingId > 0)
+      log(`⚠ Missing ID:      ${counts.missingId} row${counts.missingId !== 1 ? 's' : ''} have no student_id`, 'warn');
+    if (counts.notFound > 0) {
+      log(`✗ Not in roster:   ${counts.notFound} student ID${counts.notFound !== 1 ? 's' : ''} not found`, 'error');
+      issues.notFound.slice(0, 10).forEach(id => log(`    → ${id}`, 'error'));
+      if (issues.notFound.length > 10)
+        log(`    … and ${issues.notFound.length - 10} more (see console for full list)`, 'error');
+      console.warn('[CanvasFeedback] Not-found IDs:', issues.notFound);
+    }
+
+    log('──────────────────────────────────────');
+    const ok = counts.notFound === 0 && counts.missingId === 0;
+    if (ok && counts.willPost > 0) {
+      log(`✓ All clear — ready to post to ${counts.willPost} student${counts.willPost !== 1 ? 's' : ''}. Click ▶ Start when ready.`, 'ok');
+    } else if (counts.willPost === 0) {
+      log('Nothing to post — check your file has grade or comment values.', 'warn');
+    } else {
+      log(`Issues found. Fix the ${counts.notFound + counts.missingId} problem row${(counts.notFound + counts.missingId) !== 1 ? 's' : ''} before running.`, 'error');
+    }
+
+    setProgress(rows.length, rows.length, counts.notFound + counts.missingId);
+    setStatus(ok ? 'done' : 'error');
+    checkBtn.disabled = false;
+    startBtn.disabled = false;
   }
 
   // UI start button handler
